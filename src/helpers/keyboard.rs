@@ -1,7 +1,7 @@
 use crate::button::Button;
 use crate::iconbutton::IconButton;
 use crate::smartstate::SmartstateProvider;
-use crate::ui::{InternalResponse, Response, Ui};
+use crate::ui::{Interaction, InternalResponse, Response, Ui};
 use embedded_graphics::prelude::*;
 use embedded_iconoir::size16px;
 
@@ -517,10 +517,11 @@ impl<'a> Layout<'a> {
 pub fn draw_keyboard<
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
     const M: usize,
     const N: usize,
 >(
-    ui: &mut Ui<DRAW, COL>,
+    ui: &mut Ui<DRAW, COL, INTER>,
     layout: &Layout<'_>,
     mut smartstates: Option<&mut SmartstateProvider<M>>,
     draw_num_row: bool,
@@ -528,7 +529,7 @@ pub fn draw_keyboard<
     shift: &mut bool,
     open: &mut bool,
     text: &mut heapless::String<N>,
-) -> Response {
+) -> Response<INTER> {
     // if open: clear to bottom and draw keyboard
     // if not open: clear to bottom
     // This is only cleared if the smartstates require it

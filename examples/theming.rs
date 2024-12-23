@@ -16,7 +16,7 @@ use kolibri_embedded_gui::style::{
     medsize_blue_rgb565_style, medsize_crt_rgb565_style, medsize_light_rgb565_style,
     medsize_retro_rgb565_style, medsize_rgb565_style, medsize_sakura_rgb565_style,
 };
-use kolibri_embedded_gui::ui::{Interaction, Ui};
+use kolibri_embedded_gui::ui::{TouchInteraction, Ui};
 
 fn main() -> Result<(), core::convert::Infallible> {
     // Simulator Setup (ILI9341-like Display)
@@ -41,7 +41,7 @@ fn main() -> Result<(), core::convert::Infallible> {
     let mut theme = medsize_rgb565_style();
 
     // clear bg once
-    let mut ui = Ui::new_fullscreen(&mut display, theme);
+    let mut ui: Ui<_, _, TouchInteraction> = Ui::new_fullscreen(&mut display, theme);
     ui.clear_background().unwrap();
 
     'outer: loop {
@@ -51,16 +51,16 @@ fn main() -> Result<(), core::convert::Infallible> {
         // handle input
         match (last_down, mouse_down, location) {
             (false, true, loc) => {
-                ui.interact(Interaction::Click(loc));
+                ui.interact(TouchInteraction::Click(loc));
             }
             (true, true, loc) => {
-                ui.interact(Interaction::Drag(loc));
+                ui.interact(TouchInteraction::Drag(loc));
             }
             (true, false, loc) => {
-                ui.interact(Interaction::Release(loc));
+                ui.interact(TouchInteraction::Release(loc));
             }
             (false, false, loc) => {
-                ui.interact(Interaction::Hover(loc));
+                ui.interact(TouchInteraction::Hover(loc));
             }
         }
 

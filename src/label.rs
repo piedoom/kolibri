@@ -1,5 +1,5 @@
 use crate::smartstate::{Container, Smartstate};
-use crate::ui::{GuiError, GuiResult, Response, Ui, Widget};
+use crate::ui::{GuiError, GuiResult, Interaction, Response, Ui, Widget};
 use core::ops::Add;
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::geometry::{Point, Size};
@@ -35,11 +35,14 @@ impl<'a> Label<'a> {
     }
 }
 
-impl Widget for Label<'_> {
+impl<INTER> Widget<INTER> for Label<'_>
+where
+    INTER: Interaction,
+{
     fn draw<DRAW: DrawTarget<Color = COL>, COL: PixelColor>(
         &mut self,
-        ui: &mut Ui<DRAW, COL>,
-    ) -> GuiResult<Response> {
+        ui: &mut Ui<DRAW, COL, INTER>,
+    ) -> GuiResult<Response<INTER>> {
         // get size
 
         let font = if let Some(font) = self.font {

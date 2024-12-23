@@ -31,9 +31,9 @@ impl<'a> Checkbox<'a> {
 }
 
 impl Checkbox<'_> {
-    fn draw_icon<DRAW: DrawTarget<Color = COL>, COL: PixelColor>(
+    fn draw_icon<DRAW: DrawTarget<Color = COL>, COL: PixelColor, INTER: Interaction>(
         &mut self,
-        ui: &mut Ui<DRAW, COL>,
+        ui: &mut Ui<DRAW, COL, INTER>,
         icon: impl ImageDrawable<Color = COL>,
         area: &Rectangle,
         center_offset: Point,
@@ -50,11 +50,14 @@ impl Checkbox<'_> {
     }
 }
 
-impl Widget for Checkbox<'_> {
+impl<INTER> Widget<INTER> for Checkbox<'_>
+where
+    INTER: Interaction,
+{
     fn draw<DRAW: DrawTarget<Color = COL>, COL: PixelColor>(
         &mut self,
-        ui: &mut Ui<DRAW, COL>,
-    ) -> GuiResult<Response> {
+        ui: &mut Ui<DRAW, COL, INTER>,
+    ) -> GuiResult<Response<INTER>> {
         // allocate space
 
         let size = ui.style().default_widget_height.max(ui.get_row_height());
@@ -69,7 +72,7 @@ impl Widget for Checkbox<'_> {
         // check interaction
 
         let mut changed = false;
-        if let Interaction::Release(_) = iresponse.interaction {
+        if iresponse.interaction.is_released() {
             *self.checked = !*self.checked;
             changed = true;
         }
@@ -79,28 +82,27 @@ impl Widget for Checkbox<'_> {
         // smartstate
         let prevstate = self.smartstate.clone_inner();
 
-        let style = match iresponse.interaction {
-            Interaction::Click(_) | Interaction::Drag(_) | Interaction::Release(_) => {
-                self.smartstate.modify(|st| *st = Smartstate::state(1));
-                PrimitiveStyleBuilder::new()
-                    .fill_color(ui.style().primary_color)
-                    .stroke_color(ui.style().highlight_border_color)
-                    .stroke_width(ui.style().highlight_border_width)
-            }
-            Interaction::Hover(_) => {
-                self.smartstate.modify(|st| *st = Smartstate::state(2));
-                PrimitiveStyleBuilder::new()
-                    .fill_color(ui.style().highlight_item_background_color)
-                    .stroke_color(ui.style().highlight_border_color)
-                    .stroke_width(ui.style().highlight_border_width)
-            }
-            _ => {
-                self.smartstate.modify(|st| *st = Smartstate::state(3));
-                PrimitiveStyleBuilder::new()
-                    .fill_color(ui.style().item_background_color)
-                    .stroke_color(ui.style().border_color)
-                    .stroke_width(ui.style().border_width)
-            }
+        let style = if iresponse.interaction.is_clicked()
+            || iresponse.interaction.is_dragged()
+            || iresponse.interaction.is_released()
+        {
+            self.smartstate.modify(|st| *st = Smartstate::state(1));
+            PrimitiveStyleBuilder::new()
+                .fill_color(ui.style().primary_color)
+                .stroke_color(ui.style().highlight_border_color)
+                .stroke_width(ui.style().highlight_border_width)
+        } else if iresponse.interaction.is_hovered() {
+            self.smartstate.modify(|st| *st = Smartstate::state(2));
+            PrimitiveStyleBuilder::new()
+                .fill_color(ui.style().highlight_item_background_color)
+                .stroke_color(ui.style().highlight_border_color)
+                .stroke_width(ui.style().highlight_border_width)
+        } else {
+            self.smartstate.modify(|st| *st = Smartstate::state(3));
+            PrimitiveStyleBuilder::new()
+                .fill_color(ui.style().item_background_color)
+                .stroke_color(ui.style().border_color)
+                .stroke_width(ui.style().border_width)
         };
 
         let redraw = !self.smartstate.eq_option(&prevstate) || changed;

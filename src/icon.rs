@@ -1,5 +1,5 @@
 use crate::smartstate::{Container, Smartstate};
-use crate::ui::{GuiError, GuiResult, Response, Ui, Widget};
+use crate::ui::{GuiError, GuiResult, Interaction, Response, Ui, Widget};
 use core::marker::PhantomData;
 use core::ops::Add;
 use embedded_graphics::draw_target::DrawTarget;
@@ -36,11 +36,14 @@ impl<'a, Ico: IconoirIcon> IconWidget<'a, Ico> {
     }
 }
 
-impl<Ico: IconoirIcon> Widget for IconWidget<'_, Ico> {
+impl<Ico: IconoirIcon, INTER> Widget<INTER> for IconWidget<'_, Ico>
+where
+    INTER: Interaction,
+{
     fn draw<DRAW: DrawTarget<Color = COL>, COL: PixelColor>(
         &mut self,
-        ui: &mut Ui<DRAW, COL>,
-    ) -> GuiResult<Response> {
+        ui: &mut Ui<DRAW, COL, INTER>,
+    ) -> GuiResult<Response<INTER>> {
         // find size && allocate space
         let icon = Ico::new(ui.style().icon_color);
         let iresponse = ui.allocate_space(icon.size())?;

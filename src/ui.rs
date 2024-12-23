@@ -3,6 +3,7 @@ use crate::style::Style;
 use core::cell::UnsafeCell;
 use core::cmp::{max, min};
 use core::fmt::Debug;
+use core::hash::Hash;
 use core::ops::{Add, AddAssign, Sub};
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::geometry::Dimensions;
@@ -39,27 +40,33 @@ impl GuiError {
 
 pub type GuiResult<T> = Result<T, GuiError>;
 
-pub struct InternalResponse {
+pub struct InternalResponse<INTER: Interaction> {
     pub area: Rectangle,
-    pub interaction: Interaction,
+    pub interaction: INTER,
 }
 
-impl InternalResponse {
-    pub fn new(area: Rectangle, interaction: Interaction) -> Self {
+impl<INTER> InternalResponse<INTER>
+where
+    INTER: Interaction,
+{
+    pub fn new(area: Rectangle, interaction: INTER) -> Self {
         Self { area, interaction }
     }
 
     pub fn empty() -> Self {
         Self {
             area: Rectangle::new(Point::zero(), Size::zero()),
-            interaction: Interaction::None,
+            interaction: INTER::none(),
         }
     }
 }
 
 /// Response for UI interaction / space allocation and such
-pub struct Response {
-    pub internal: InternalResponse,
+pub struct Response<INTER>
+where
+    INTER: Interaction,
+{
+    pub internal: InternalResponse<INTER>,
     /// Whether the widget was clicked (as in successfully interacted with)
     pub click: bool,
 
@@ -85,8 +92,11 @@ pub struct Response {
 }
 
 // builder pattern
-impl Response {
-    pub fn new(raw: InternalResponse) -> Response {
+impl<INTER> Response<INTER>
+where
+    INTER: Interaction,
+{
+    pub fn new(raw: InternalResponse<INTER>) -> Response<INTER> {
         Response {
             internal: raw,
             click: false,
@@ -97,7 +107,7 @@ impl Response {
         }
     }
 
-    pub fn from_error(error: GuiError) -> Response {
+    pub fn from_error(error: GuiError) -> Response<INTER> {
         Response::new(InternalResponse::empty()).set_error(error)
     }
 
@@ -155,11 +165,11 @@ impl Response {
     }
 }
 
-pub trait Widget {
+pub trait Widget<INTER: Interaction> {
     fn draw<DRAW: DrawTarget<Color = COL>, COL: PixelColor>(
         &mut self,
-        ui: &mut Ui<DRAW, COL>,
-    ) -> GuiResult<Response>;
+        ui: &mut Ui<DRAW, COL, INTER>,
+    ) -> GuiResult<Response<INTER>>;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -407,9 +417,26 @@ impl<COL: PixelColor, DRAW: DrawTarget<Color = COL, Error = ERR>, ERR> DrawTarge
     }
 }
 
+pub trait Interaction:
+    Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Hash + Default
+{
+    fn get_point(&self) -> Option<Point>;
+    /// The no-op state of this interaction
+    fn none() -> Self;
+    fn is_none(&self) -> bool {
+        *self == Self::none()
+    }
+    /// State(s) that are considered as active, such as a click
+    fn is_clicked(&self) -> bool;
+    /// State(s) that are considered as focused, such as a hover
+    fn is_hovered(&self) -> bool;
+    fn is_released(&self) -> bool;
+    fn is_dragged(&self) -> bool;
+}
+
 /// Interaction with the UI
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum Interaction {
+pub enum TouchInteraction {
     /// A click event (mouse, touch, etc. down)
     Click(Point),
     /// A drag event (mouse, touch, etc. move while clicked)
@@ -424,37 +451,59 @@ pub enum Interaction {
     None,
 }
 
-impl Interaction {
+impl Interaction for TouchInteraction {
     fn get_point(&self) -> Option<Point> {
         match self {
-            Interaction::Click(p) => Some(*p),
-            Interaction::Drag(p) => Some(*p),
-            Interaction::Release(p) => Some(*p),
-            Interaction::Hover(p) => Some(*p),
-            Interaction::None => None,
+            TouchInteraction::Click(p)
+            | TouchInteraction::Drag(p)
+            | TouchInteraction::Release(p)
+            | TouchInteraction::Hover(p) => Some(*p),
+            TouchInteraction::None => None,
         }
+    }
+
+    fn none() -> Self {
+        Self::None
+    }
+
+    fn is_clicked(&self) -> bool {
+        matches!(self, Self::Click(_))
+    }
+
+    fn is_hovered(&self) -> bool {
+        matches!(self, Self::Hover(_))
+    }
+
+    fn is_released(&self) -> bool {
+        matches!(self, Self::Release(_))
+    }
+
+    fn is_dragged(&self) -> bool {
+        matches!(self, Self::Drag(_))
     }
 }
 
-pub struct Ui<'a, DRAW, COL>
+pub struct Ui<'a, DRAW, COL, INTER>
 where
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
 {
     bounds: Rectangle,
     painter: Painter<'a, COL, DRAW>,
     style: Style<COL>,
     placer: Placer,
-    interact: Interaction,
+    interact: INTER,
     /// Whether the UI was background-cleared this frame
     cleared: bool,
 }
 
 // getters for Ui things
-impl<DRAW, COL> Ui<'_, DRAW, COL>
+impl<DRAW, COL, INTER> Ui<'_, DRAW, COL, INTER>
 where
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
 {
     /// Get the width of the UI's placer. Note that this **isn't the entire screen width**.
     /// To get the screen width, use `get_screen_width()`.
@@ -468,10 +517,11 @@ where
     }
 }
 
-impl<'a, COL, DRAW> Ui<'a, DRAW, COL>
+impl<'a, COL, DRAW, INTER> Ui<'a, DRAW, COL, INTER>
 where
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
 {
     pub fn new(drawable: &'a mut DRAW, bounds: Rectangle, style: Style<COL>) -> Self {
         // set bounds to internal bounds (apply padding)
@@ -498,7 +548,7 @@ where
             painter: Painter::new(drawable),
             style,
             placer,
-            interact: Interaction::None,
+            interact: INTER::none(),
             cleared: false,
         }
     }
@@ -508,11 +558,15 @@ where
         Ui::new(drawable, bounds, style)
     }
 
-    pub fn interact(&mut self, interaction: Interaction) {
+    pub fn interact(&mut self, interaction: INTER) {
         self.interact = interaction;
     }
 
-    pub fn add_and_clear_col_remainder(&mut self, widget: impl Widget, clear: bool) -> Response {
+    pub fn add_and_clear_col_remainder(
+        &mut self,
+        widget: impl Widget<INTER>,
+        clear: bool,
+    ) -> Response<INTER> {
         let resp = match self.add_raw(widget) {
             Ok(resp) => resp,
             Err(e) => {
@@ -529,7 +583,7 @@ where
         resp
     }
 
-    pub fn add(&mut self, widget: impl Widget) -> Response {
+    pub fn add(&mut self, widget: impl Widget<INTER>) -> Response<INTER> {
         // draw widget. TODO: Add new auto ID
         let resp = match self.add_raw(widget) {
             Ok(resp) => resp,
@@ -546,7 +600,7 @@ where
     }
 
     /// Add a widget horizontally to the layout to the current row
-    pub fn add_horizontal(&mut self, widget: impl Widget) -> Response {
+    pub fn add_horizontal(&mut self, widget: impl Widget<INTER>) -> Response<INTER> {
         // add widget (auto-expands row height potentially
         let resp = match self.add_raw(widget) {
             Ok(resp) => resp,
@@ -563,7 +617,7 @@ where
         resp
     }
 
-    pub fn add_raw(&mut self, mut widget: impl Widget) -> GuiResult<Response> {
+    pub fn add_raw(&mut self, mut widget: impl Widget<INTER>) -> GuiResult<Response<INTER>> {
         widget.draw(self)
     }
 
@@ -604,7 +658,7 @@ where
         self.placer.space_available()
     }
 
-    pub fn check_interact(&self, area: Rectangle) -> Interaction {
+    pub fn check_interact(&self, area: Rectangle) -> INTER {
         if self
             .interact
             .get_point()
@@ -613,16 +667,19 @@ where
         {
             self.interact
         } else {
-            Interaction::None
+            INTER::none()
         }
     }
 
     /// For now, only stub method.
-    pub fn allocate_exact_size(&mut self, desired_size: Size) -> GuiResult<InternalResponse> {
+    pub fn allocate_exact_size(
+        &mut self,
+        desired_size: Size,
+    ) -> GuiResult<InternalResponse<INTER>> {
         self.allocate_space(desired_size)
     }
 
-    pub fn allocate_space(&mut self, desired_size: Size) -> GuiResult<InternalResponse> {
+    pub fn allocate_space(&mut self, desired_size: Size) -> GuiResult<InternalResponse<INTER>> {
         let rect = self.placer.next(desired_size).map(|mut rect| {
             rect.top_left.add_assign(self.bounds.top_left);
             rect
@@ -635,7 +692,10 @@ where
         })
     }
 
-    pub fn allocate_space_no_wrap(&mut self, desired_size: Size) -> GuiResult<InternalResponse> {
+    pub fn allocate_space_no_wrap(
+        &mut self,
+        desired_size: Size,
+    ) -> GuiResult<InternalResponse<INTER>> {
         let area = self.placer.next_no_wrap(desired_size).map(|mut rect| {
             rect.top_left.add_assign(self.bounds.top_left);
             rect
@@ -655,10 +715,11 @@ where
 }
 
 // Clearing impls
-impl<COL, DRAW> Ui<'_, DRAW, COL>
+impl<COL, DRAW, INTER> Ui<'_, DRAW, COL, INTER>
 where
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
 {
     /// Return whether the UI was background-cleared this frame
     pub fn cleared(&self) -> bool {
@@ -749,10 +810,11 @@ where
 }
 
 // Drawing Impl
-impl<'a, COL, DRAW> Ui<'a, DRAW, COL>
+impl<'a, COL, DRAW, INTER> Ui<'a, DRAW, COL, INTER>
 where
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
 {
     pub fn set_buffer(&mut self, buffer: &'a mut [COL]) {
         self.painter.set_buffer(buffer);
@@ -778,17 +840,18 @@ where
 
 // SubUI impl
 
-impl<COL, DRAW> Ui<'_, DRAW, COL>
+impl<COL, DRAW, INTER> Ui<'_, DRAW, COL, INTER>
 where
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
 {
     /// Create a sub-UI with the given bounds, where you can modify all values. This is useful for
     /// creating a sub-UI with a different style, or drawing to a screen area outside (or on top)
     /// of the normal UI.
     pub fn unchecked_sub_ui<F>(&mut self, bounds: Rectangle, f: F) -> GuiResult<()>
     where
-        F: FnOnce(&mut Ui<DRAW, COL>) -> GuiResult<()>,
+        F: FnOnce(&mut Ui<DRAW, COL, INTER>) -> GuiResult<()>,
     {
         let bounds = Rectangle::new(
             bounds.top_left.add(Point::new(
@@ -824,7 +887,7 @@ where
 
     pub fn sub_ui<F>(&mut self, f: F) -> GuiResult<()>
     where
-        F: FnOnce(&mut Ui<DRAW, COL>) -> GuiResult<()>,
+        F: FnOnce(&mut Ui<DRAW, COL, INTER>) -> GuiResult<()>,
     {
         self.painter.with_subpainter(|painter| {
             let mut sub_ui = Ui {
@@ -847,7 +910,7 @@ where
 
     pub fn right_panel_ui<F>(&mut self, width: u32, allow_smaller: bool, f: F) -> GuiResult<()>
     where
-        F: FnOnce(&mut Ui<DRAW, COL>) -> GuiResult<()>,
+        F: FnOnce(&mut Ui<DRAW, COL, INTER>) -> GuiResult<()>,
     {
         // check bounds and remaining space of placer
         let bounds = self.placer.bounds;
@@ -880,7 +943,7 @@ where
     /// or you will get flickering.
     pub fn central_centered_panel_ui<F>(&mut self, width: u32, height: u32, f: F) -> GuiResult<()>
     where
-        F: FnOnce(&mut Ui<DRAW, COL>) -> GuiResult<()>,
+        F: FnOnce(&mut Ui<DRAW, COL, INTER>) -> GuiResult<()>,
     {
         let bounds = self.placer.bounds;
 
@@ -912,10 +975,11 @@ where
 
 // debug drawing impl
 
-impl<COL, DRAW> Ui<'_, DRAW, COL>
+impl<COL, DRAW, INTER> Ui<'_, DRAW, COL, INTER>
 where
     DRAW: DrawTarget<Color = COL>,
     COL: PixelColor,
+    INTER: Interaction,
 {
     pub fn draw_bounds_debug(&mut self, color: COL) -> GuiResult<()> {
         let bounds = self.bounds;

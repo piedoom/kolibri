@@ -10,7 +10,7 @@ use kolibri_embedded_gui::button::Button;
 use kolibri_embedded_gui::label::Label;
 use kolibri_embedded_gui::smartstate::SmartstateProvider;
 use kolibri_embedded_gui::style::medsize_rgb565_style;
-use kolibri_embedded_gui::ui::{Interaction, Ui};
+use kolibri_embedded_gui::ui::{TouchInteraction, Ui};
 
 fn main() -> Result<(), core::convert::Infallible> {
     // Simulator Setup (ILI9341-like Display)
@@ -32,7 +32,8 @@ fn main() -> Result<(), core::convert::Infallible> {
     let mut i = 0u8;
 
     // clear bg once
-    let mut ui = Ui::new_fullscreen(&mut display, medsize_rgb565_style());
+    let mut ui: Ui<_, _, TouchInteraction> =
+        Ui::new_fullscreen(&mut display, medsize_rgb565_style());
     ui.clear_background().unwrap();
 
     // smartstates (for incremental redrawing)
@@ -64,16 +65,16 @@ fn main() -> Result<(), core::convert::Infallible> {
         // handle input
         match (last_down, mouse_down, location) {
             (false, true, loc) => {
-                ui.interact(Interaction::Click(loc));
+                ui.interact(TouchInteraction::Click(loc));
             }
             (true, true, loc) => {
-                ui.interact(Interaction::Drag(loc));
+                ui.interact(TouchInteraction::Drag(loc));
             }
             (true, false, loc) => {
-                ui.interact(Interaction::Release(loc));
+                ui.interact(TouchInteraction::Release(loc));
             }
             (false, false, loc) => {
-                ui.interact(Interaction::Hover(loc));
+                ui.interact(TouchInteraction::Hover(loc));
             }
         }
 

@@ -8,13 +8,13 @@ use embedded_graphics_simulator::{
 };
 use kolibri_embedded_gui::button::Button;
 use kolibri_embedded_gui::helpers::keyboard;
-use kolibri_embedded_gui::helpers::keyboard::{draw_keyboard, Layout};
+use kolibri_embedded_gui::helpers::keyboard::{Layout, draw_keyboard};
 use kolibri_embedded_gui::icon::IconWidget;
 use kolibri_embedded_gui::icons::size24px;
 use kolibri_embedded_gui::label::Label;
 use kolibri_embedded_gui::smartstate::SmartstateProvider;
 use kolibri_embedded_gui::style::medsize_rgb565_style;
-use kolibri_embedded_gui::ui::{Interaction, Ui};
+use kolibri_embedded_gui::ui::{TouchInteraction, Ui};
 
 fn main() -> Result<(), core::convert::Infallible> {
     // ILI9341-clone like display
@@ -36,7 +36,8 @@ fn main() -> Result<(), core::convert::Infallible> {
     let mut smartstates = SmartstateProvider::<50>::new();
 
     // clear bg once
-    let mut ui = Ui::new_fullscreen(&mut display, medsize_rgb565_style());
+    let mut ui: Ui<_, _, TouchInteraction> =
+        Ui::new_fullscreen(&mut display, medsize_rgb565_style());
     ui.clear_background().unwrap();
 
     // alloc buffer
@@ -54,16 +55,16 @@ fn main() -> Result<(), core::convert::Infallible> {
 
         match (last_down, mouse_down, location) {
             (false, true, loc) => {
-                ui.interact(Interaction::Click(loc));
+                ui.interact(TouchInteraction::Click(loc));
             }
             (true, true, loc) => {
-                ui.interact(Interaction::Drag(loc));
+                ui.interact(TouchInteraction::Drag(loc));
             }
             (true, false, loc) => {
-                ui.interact(Interaction::Release(loc));
+                ui.interact(TouchInteraction::Release(loc));
             }
             (false, false, loc) => {
-                ui.interact(Interaction::Hover(loc));
+                ui.interact(TouchInteraction::Hover(loc));
             }
         }
 

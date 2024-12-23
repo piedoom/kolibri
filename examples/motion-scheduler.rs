@@ -15,7 +15,8 @@ use kolibri_embedded_gui::icons::size18px;
 use kolibri_embedded_gui::prelude::*;
 use kolibri_embedded_gui::smartstate::{Container, Smartstate, SmartstateProvider};
 use kolibri_embedded_gui::style::medsize_rgb565_style;
-use kolibri_embedded_gui::ui::{GuiResult, Interaction, Response, Ui, Widget};
+use kolibri_embedded_gui::ui::Interaction;
+use kolibri_embedded_gui::ui::{GuiResult, Response, TouchInteraction, Ui, Widget};
 use std::cmp::max;
 use std::ops::{Add, Sub};
 use std::time::Duration;
@@ -60,11 +61,11 @@ enum ButtonPress {
     Center,
 }
 
-impl Widget for StepWidget<'_> {
+impl Widget<TouchInteraction> for StepWidget<'_> {
     fn draw<DRAW: DrawTarget<Color = COL>, COL: PixelColor>(
         &mut self,
-        ui: &mut Ui<DRAW, COL>,
-    ) -> GuiResult<Response> {
+        ui: &mut Ui<DRAW, COL, TouchInteraction>,
+    ) -> GuiResult<Response<TouchInteraction>> {
         // calc size
 
         // icons: 12px
@@ -96,33 +97,31 @@ impl Widget for StepWidget<'_> {
         let interact = iresponse.interaction;
         let prevstate = self.smartstate.clone_inner();
 
-        let intr = match interact {
-            Interaction::Click(pos) | Interaction::Drag(pos) | Interaction::Release(pos) => {
-                match pos.y - iresponse.area.top_left.y {
-                    0..=16 => {
-                        self.smartstate.modify(|sm| sm.set_state(1));
-                        Some(ButtonPress::Up)
-                    }
-                    17..=36 => {
-                        // 36 because padding
-                        // not quite perfect, but good enough for now. If chain is better
-                        self.smartstate.modify(|sm| sm.set_state(2));
-                        Some(ButtonPress::Center)
-                    }
-                    37.. => {
-                        self.smartstate.modify(|sm| sm.set_state(3));
-                        Some(ButtonPress::Down)
-                    }
-                    _ => unreachable!(),
+        let intr = if interact.is_clicked() || interact.is_dragged() || interact.is_released() {
+            let pos = interact.get_point().unwrap();
+            match pos.y - iresponse.area.top_left.y {
+                0..=16 => {
+                    self.smartstate.modify(|sm| sm.set_state(1));
+                    Some(ButtonPress::Up)
                 }
+                17..=36 => {
+                    // 36 because padding
+                    // not quite perfect, but good enough for now. If chain is better
+                    self.smartstate.modify(|sm| sm.set_state(2));
+                    Some(ButtonPress::Center)
+                }
+                37.. => {
+                    self.smartstate.modify(|sm| sm.set_state(3));
+                    Some(ButtonPress::Down)
+                }
+                _ => unreachable!(),
             }
-            _ => {
-                self.smartstate.modify(|sm| sm.set_state(0));
-                None
-            }
+        } else {
+            self.smartstate.modify(|sm| sm.set_state(0));
+            None
         };
 
-        let pressed = matches!(interact, Interaction::Release(_));
+        let pressed = interact.is_released();
 
         // change (up/down/center)
 
@@ -299,7 +298,8 @@ fn main() -> Result<(), core::convert::Infallible> {
     let mut smartstates = SmartstateProvider::<20>::new();
 
     // clear bg once
-    let mut ui = Ui::new_fullscreen(&mut display, medsize_rgb565_style());
+    let mut ui: Ui<_, _, TouchInteraction> =
+        Ui::new_fullscreen(&mut display, medsize_rgb565_style());
     ui.clear_background().unwrap();
 
     // alloc buffer
@@ -317,16 +317,16 @@ fn main() -> Result<(), core::convert::Infallible> {
 
         match (last_down, mouse_down, location) {
             (false, true, loc) => {
-                ui.interact(Interaction::Click(loc));
+                ui.interact(TouchInteraction::Click(loc));
             }
             (true, true, loc) => {
-                ui.interact(Interaction::Drag(loc));
+                ui.interact(TouchInteraction::Drag(loc));
             }
             (true, false, loc) => {
-                ui.interact(Interaction::Release(loc));
+                ui.interact(TouchInteraction::Release(loc));
             }
             (false, false, loc) => {
-                ui.interact(Interaction::Hover(loc));
+                ui.interact(TouchInteraction::Hover(loc));
             }
         }
 

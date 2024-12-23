@@ -29,11 +29,14 @@ impl<'a> Button<'a> {
     }
 }
 
-impl Widget for Button<'_> {
+impl<INTER> Widget<INTER> for Button<'_>
+where
+    INTER: Interaction,
+{
     fn draw<DRAW: DrawTarget<Color = COL>, COL: PixelColor>(
         &mut self,
-        ui: &mut Ui<DRAW, COL>,
-    ) -> GuiResult<Response> {
+        ui: &mut Ui<DRAW, COL, INTER>,
+    ) -> GuiResult<Response<INTER>> {
         // get size
 
         let font = ui.style().default_font;
@@ -64,44 +67,36 @@ impl Widget for Button<'_> {
         text.text_style.baseline = Baseline::Top;
 
         // check for click
-        let click = matches!(iresponse.interaction, Interaction::Release(_));
-        let down = matches!(
-            iresponse.interaction,
-            Interaction::Click(_) | Interaction::Drag(_)
-        );
+        let click = iresponse.interaction.is_clicked();
+        let down = iresponse.interaction.is_clicked() || iresponse.interaction.is_dragged();
 
         // styles and smartstate
         let prevstate = self.smartstate.clone_inner();
 
-        let rect_style = match iresponse.interaction {
-            Interaction::None => {
-                self.smartstate.modify(|st| *st = Smartstate::state(1));
+        let rect_style = if iresponse.interaction.is_none() {
+            self.smartstate.modify(|st| *st = Smartstate::state(1));
 
-                PrimitiveStyleBuilder::new()
-                    .stroke_color(ui.style().border_color)
-                    .stroke_width(ui.style().border_width)
-                    .fill_color(ui.style().item_background_color)
-                    .build()
-            }
-            Interaction::Hover(_) => {
-                self.smartstate.modify(|st| *st = Smartstate::state(2));
+            PrimitiveStyleBuilder::new()
+                .stroke_color(ui.style().border_color)
+                .stroke_width(ui.style().border_width)
+                .fill_color(ui.style().item_background_color)
+                .build()
+        } else if iresponse.interaction.is_hovered() {
+            self.smartstate.modify(|st| *st = Smartstate::state(2));
 
-                PrimitiveStyleBuilder::new()
-                    .stroke_color(ui.style().highlight_border_color)
-                    .stroke_width(ui.style().highlight_border_width)
-                    .fill_color(ui.style().highlight_item_background_color)
-                    .build()
-            }
+            PrimitiveStyleBuilder::new()
+                .stroke_color(ui.style().highlight_border_color)
+                .stroke_width(ui.style().highlight_border_width)
+                .fill_color(ui.style().highlight_item_background_color)
+                .build()
+        } else {
+            self.smartstate.modify(|st| *st = Smartstate::state(3));
 
-            _ => {
-                self.smartstate.modify(|st| *st = Smartstate::state(3));
-
-                PrimitiveStyleBuilder::new()
-                    .stroke_color(ui.style().highlight_border_color)
-                    .stroke_width(ui.style().highlight_border_width)
-                    .fill_color(ui.style().primary_color)
-                    .build()
-            }
+            PrimitiveStyleBuilder::new()
+                .stroke_color(ui.style().highlight_border_color)
+                .stroke_width(ui.style().highlight_border_width)
+                .fill_color(ui.style().primary_color)
+                .build()
         };
 
         if !self.smartstate.eq_option(&prevstate) {
